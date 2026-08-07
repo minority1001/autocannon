@@ -6,7 +6,7 @@ const rl = readline.createInterface({ input: process.stdin, output: process.stdo
 const question = (q) => new Promise(resolve => rl.question(q, resolve))
 
 async function main() {
-    console.log('\x1b[36m=== AUTOCANNON V2 - DENGAN STATUS BREAKDOWN ===\x1b[0m\n')
+    console.log('\x1b[36m=== AUTOCANNON V3 - FIX TIMEOUT ===\x1b[0m\n')
 
     const target = await question('Target URL: ')
     const method = await question('Method [GET]: ') || 'GET'
@@ -31,8 +31,10 @@ async function main() {
         }
     }
 
-    console.log(`\n\x1b[32mMulai test ke: ${target}\x1b[0m`)
-    console.log(`Method: ${method} | Koneksi: ${connections} | Durasi: ${duration}s | Pipelining: ${rps}\n`)
+    console.log(`\n\x1b[32mMulai test ke: ${target}\x1b[0m\n`)
+
+    const statusCodes = {}
+    const errors = {}
 
     const instance = autocannon({
         url: target,
@@ -42,49 +44,40 @@ async function main() {
         connections: parseInt(connections),
         duration: parseInt(duration),
         pipelining: parseInt(rps),
-        timeout: 10
+        timeout: 30, // <--- dinaikin biar ga minus
+        ignoreErrors: true // <--- biar lanjut walau 5xx
     })
-
-    let statusCodes = {}
 
     instance.on('response', (client, statusCode) => {
         statusCodes[statusCode] = (statusCodes[statusCode] || 0) + 1
     })
 
-    autocannon.track(instance, {
-        renderProgressBar: true,
-        renderResultsTable: true
+    instance.on('error', (err) => {
+        errors[err.code] = (errors[err.code] || 0) + 1
     })
+
+    autocannon.track(instance)
 
     instance.on('done', (result) => {
         console.log('\n\x1b[32m=== HASIL AKHIR ===\x1b[0m')
-        console.log(`Target: ${result.url}`)
         console.log(`Total Requests: ${result.requests.total}`)
         console.log(`RPS Avg: ${result.requests.average}`)
         console.log(`Latency Avg: ${result.latency.average.toFixed(2)} ms`)
-        console.log(`Throughput: ${(result.throughput.average / 1024 / 1024).toFixed(2)} MB/s`)
         console.log(`Errors: ${result.errors} Timeouts: ${result.timeouts}`)
 
-        console.log('\n\x1b[33m=== BREAKDOWN STATUS CODE ===\x1b[0m')
-        Object.keys(statusCodes).sort().forEach(code => {
-            console.log(` ${code}: ${statusCodes[code]}`)
-        })
+        console.log('\n\x1b[33m=== STATUS CODE ===\x1b[0m')
+        Object.keys(statusCodes).sort().forEach(code => console.log(` ${code}: ${statusCodes[code]}`))
+
+        if(Object.keys(errors).length > 0){
+            console.log('\n\x1b[31m=== ERROR TYPE ===\x1b[0m')
+            Object.keys(errors).forEach(e => console.log(` ${e}: ${errors[e]}`))
+        }
 
         if (saveCSV.toLowerCase() === 'y') {
-            const csv = `stat,value\n` +
-                `Total Requests,${result.requests.total}\n` +
-                `RPS Avg,${result.requests.average}\n` +
-                `Latency Avg,${result.latency.average}\n` +
-                `Errors,${result.errors}\n` +
-                `Timeouts,${result.timeouts}\n` +
-                Object.keys(statusCodes).map(k => `${k},${statusCodes[k]}`).join('\n')
-
+            const csv = `stat,value\nTotal Requests,${result.requests.total}\nRPS Avg,${result.requests.average}\nLatency Avg,${result.latency.average}\n` + Object.keys(statusCodes).map(k => `${k},${statusCodes[k]}`).join('\n')
             fs.writeFileSync('hasil-loadtest.csv', csv)
-            console.log('\n\x1b[32mHasil disimpan ke: hasil-loadtest.csv\x1b[0m')
+            console.log('\n\x1b[32mTersimpan: hasil-loadtest.csv\x1b[0m')
         }
     })
-
-    instance.on('error', err => console.error(err))
 }
-
 main()
