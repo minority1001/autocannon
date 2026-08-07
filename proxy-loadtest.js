@@ -12,10 +12,9 @@ function question(q) {
     return new Promise(resolve => rl.question(q, resolve))
 }
 
-// ambil proxy random dari file
 function getProxies(file) {
     if (!fs.existsSync(file)) return []
-    return fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean)
+    return fs.readFileSync(file, 'utf-8').split('\n').map(s => s.trim()).filter(Boolean)
 }
 
 async function main() {
@@ -35,24 +34,25 @@ async function main() {
         process.exit(1)
     }
 
-    console.log(`\x1b[32m[+] Loaded ${proxies.length} proxies\x1b[0m`)
+    // jangan pake 139rb sekaligus, ambil 100 aja biar stabil
+    const useProxies = proxies.slice(0, 100) 
+    console.log(`\x1b[32m[+] Loaded ${proxies.length} proxies. Dipake: ${useProxies.length}\x1b[0m`)
 
-    let count = 0
+    let i = 0
     const instance = autocannon({
         url: target,
         connections: parseInt(connections),
         duration: parseInt(duration),
         pipelining: parseInt(rps),
-        timeout: 10,
+        timeout: 15,
         renderStatusCodes: true,
         
-        // ini kuncinya: ganti agent tiap request
+        // ini cara benernya: bikin agent baru tiap koneksi
         setupClient: (client) => {
-            client.on('request', () => {
-                const proxy = proxies[count % proxies.length]
-                count++
-                client.setAgent(new HttpsProxyAgent(`http://${proxy}`))
-            })
+            const proxy = useProxies[i % useProxies.length]
+            i++
+            client.opts.agent = new HttpsProxyAgent(`http://${proxy}`)
+            console.log(`\x1b[33mProxy: ${proxy}\x1b[0m`)
         }
     }, finished)
 
@@ -65,9 +65,8 @@ async function main() {
         console.log(`Total Requests: ${result.requests.total}`)
         console.log(`RPS Avg: ${result.requests.average}`)
         console.log(`Latency Avg: ${result.latency.average} ms`)
-        console.log(`Errors: ${result.errors}`)
-        console.log(`Timeouts: ${result.timeouts}`)
-        console.log(`\x1b[33mProxy Dipake: ${count}\x1b[0m`)
+        console.log(`2xx: ${result['2xx']}  4xx: ${result['4xx']}  5xx: ${result['5xx']}`)
+        console.log(`Errors: ${result.errors}  Timeouts: ${result.timeouts}`)
     }
 }
 
